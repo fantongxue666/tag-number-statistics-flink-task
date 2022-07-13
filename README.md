@@ -1,7 +1,7 @@
 # Tag Number Statistics FlinkTask
 
 #### 介绍
-Flink实现统计历史数据的一个执行任务
+统计历史数据的Flink任务，统计位号历史数据中哪些位号缺少某时间点的数据，生成湖数据或csv报表
 
 #### 软件架构
 ##### 1，Source
@@ -10,7 +10,7 @@ Flink实现统计历史数据的一个执行任务
 
 ##### 2，Flink任务
 
-- 每天凌晨00:00执行程序，统计缺少数据的位号
+- 每天凌晨00:00:20执行程序，统计缺少数据的位号
 - 第一次执行统计数据源的位号的所有历史数据，以后执行就只统计前一天的历史数据
 - 统计所有历史数据的过程也是开窗（一天）进行批处理
 
@@ -20,50 +20,40 @@ Flink实现统计历史数据的一个执行任务
 
 ##### 4，统计结果的表设计
 
-表一
+TableName：DeletionDataStat
 
-| ID                | 位号名称   | 位号日期   | 所属实例 | 统计日期   | 是否缺少 |
-| ----------------- | ---------- | ---------- | -------- | ---------- | -------- |
-| 位号名称+位号日期 | 11TT-10121 | yyyy-MM-dd | XXXXXXX  | yyyy-MM-dd | TRUE     |
-
-表二
-
-| ID   | 表一ID            | 缺少时刻            |
-| ---- | ----------------- | ------------------- |
-| UUID | 位号名称+位号日期 | yyyy-MM-dd HH:mm:ss |
+| ID（id） | 位号名称（tagName） | 缺失日期（deletionDate） | 缺失数（deletionCount） | 缺失时刻列表（deletionTimestamps） |
+| -------- | ------------------- | ------------------------ | ----------------------- | ---------------------------------- |
+| UUID     | 11TT-10121          | yyyy-MM-dd               | xx                      | timestamp1,timestamp2,timestamp3   |
 
 ##### 5，如何统计
 
+- 第一步，遍历位号，对每个位号查询前一天的列表
+- 第二步，筛选出缺失数据
+- 第三步，存入数据湖
+
 ##### 6，配置项
+- 配置实例的位号的时间频度（例如：时间间隔是2s，每2s一条历史数据）查询统计的sql动态读取配置项信息进行调整
+- 配置redis和数据湖的连接信息
+
+配置位号时间频度的配置文件
+
+```properties
+# key：位号名称
+# value：时间间隔 S|s 秒 M|m 分 H|h 时 支持小数
+11TT-10121=60s\
+11TT-10122=60s
+...
+```
 
 
 
+#### 使用教程
 
-#### 安装教程
+1. 打包Flink程序，上传Flink客户端
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+2. 执行命令提交执行任务到Yarn集群
 
-#### 使用说明
+   ​	如：`flink run -d -t yarn-per-job -c com.atguigu.wc.StreamWordCount  FlinkTutorial-1.0-SNAPSHOT.jar`
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### 参与贡献
-
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
-
-
-#### 特技
-
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+3. 通过ApplicationMaster查看任务执行情况
