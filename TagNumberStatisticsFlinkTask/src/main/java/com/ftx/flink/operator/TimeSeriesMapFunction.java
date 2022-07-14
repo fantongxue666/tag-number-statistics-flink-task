@@ -47,10 +47,10 @@ public class TimeSeriesMapFunction  implements MapFunction<List<RedisTimeseriesT
         Long minTimeStamp = collect.get(0);
         Long maxTimeStamp = collect.get(collect.size() - 1);
         String format = StringUtils.EMPTY;
+        format = new SimpleDateFormat("yyyy-MM-dd").format(new Date(minTimeStamp));
         while (minTimeStamp < maxTimeStamp) {
             if (!collect.contains(minTimeStamp)) {
                 //缺少数据，暂时打印进行验证
-                 format = new SimpleDateFormat("yyyy-MM-dd").format(new Date(minTimeStamp));
                 logger.info("缺少数据！位号：{} 缺少日期：{} 缺失时刻：{}", tagNo, format, minTimeStamp);
             }
             minTimeStamp += timestamp;

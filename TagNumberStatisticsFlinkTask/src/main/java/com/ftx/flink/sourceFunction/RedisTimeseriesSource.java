@@ -6,9 +6,15 @@ import io.github.dengliming.redismodule.redistimeseries.RedisTimeSeries;
 import io.github.dengliming.redismodule.redistimeseries.Sample;
 import io.github.dengliming.redismodule.redistimeseries.client.RedisTimeSeriesClient;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.flink.api.common.state.ListState;
+import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.runtime.state.FunctionInitializationContext;
+import org.apache.flink.runtime.state.FunctionSnapshotContext;
+import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.functions.source.RichSourceFunction;
 import org.redisson.config.ClusterServersConfig;
 import org.slf4j.Logger;
@@ -24,7 +30,7 @@ import java.util.*;
 /**
  * 时序redis的源数据
  */
-public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseriesTagMessage>> {
+public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseriesTagMessage>> implements CheckpointedFunction {
     final Logger logger = LoggerFactory.getLogger(DataLakeSource.class);
 
     //application.properties文件的绝对路径
@@ -32,7 +38,8 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
     //建立的redis连接
     private RedisTimeSeriesClient rtsc = null;
     //状态，标记是否第一次执行
-    ValueState<Boolean> state = null;
+    ListState<Boolean> checkPointState = null;
+    boolean state = false;
 
     /**
      * 初始化
@@ -40,15 +47,8 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
      */
     public RedisTimeseriesSource(String appPropertiesPath) {
         this.appPropertiesPath = appPropertiesPath;
-        //初始化状态为false，表示未执行
-        ValueStateDescriptor<Boolean> descriptor = new ValueStateDescriptor<>("redisSourceState", Types.BOOLEAN);
-        state = getRuntimeContext().getState(descriptor);
-        try {
-            state.update(false);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
+
 
     @Override
     public void run(SourceContext<List<RedisTimeseriesTagMessage>> ctx) throws Exception {
@@ -64,8 +64,11 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
         String hostsStr = configMap.get("redis.hosts");
         String[] redisHosts = hostsStr.split(",");
         //得到所有的位号
-        List<String> ckeys = getRedisClusterKeys(redisHosts);
-        if(!state.value()){
+//        List<String> ckeys = getRedisClusterKeys(redisHosts);
+        List<String> ckeys = new ArrayList<>();
+        ckeys.add("11TT-10121");
+
+        if(!state){
             logger.info("程序第一次执行，处理时序redis的所有数据");
             //开始时间
             String startDateStr = configMap.get("redis.startDate");
@@ -83,13 +86,11 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
             while(startDateTimestamp < endDateTimestamp){
                 for(String key : ckeys){
                     List<Sample.Value> valueList = rts.range(key, simpleDateFormat.parse(startDateStr + " 00:00:00").getTime(), simpleDateFormat.parse(nextDayStr + " 23:59:59").getTime());
-                    double tempValue = 0;
-                    long tempTempstamp = 0;
                     List<RedisTimeseriesTagMessage> redisTimeseriesTagMessageList = new ArrayList<>();
-                    RedisTimeseriesTagMessage redisTimeseriesTagMessage = new RedisTimeseriesTagMessage();
                     for(Sample.Value value : valueList){
-                        tempValue = value.getValue();
-                        tempTempstamp = value.getTimestamp();
+                        RedisTimeseriesTagMessage redisTimeseriesTagMessage = new RedisTimeseriesTagMessage();
+                        double tempValue = value.getValue();
+                        long tempTempstamp = value.getTimestamp();
                         redisTimeseriesTagMessage.setKey(key);
                         redisTimeseriesTagMessage.setValue(tempValue);
                         redisTimeseriesTagMessage.setTimestamp(tempTempstamp);
@@ -102,7 +103,7 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
                 startDateTimestamp = nextDayTimestamp;
             }
             logger.info("所有数据处理完成");
-
+            state = true;
         }else{
             logger.info("程序非第一次执行，只处理前一天的数据开始");
             Calendar calendar = Calendar.getInstance();
@@ -128,6 +129,7 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
                 ctx.collect(redisTimeseriesTagMessageList);
             }
             logger.info("数据处理完成");
+            state = true;
         }
     }
 
@@ -137,6 +139,35 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
         //关闭连接
         rtsc.shutdown();
     }
+
+    //当每次任务触发checkpoint时执行，更新保存状态数据
+    @Override
+    public void snapshotState(FunctionSnapshotContext context) throws Exception {
+        checkPointState.clear();
+        checkPointState.add(state);
+    }
+
+    /**
+     * 初始化checkpoint 存储结构，一般在这里我们会实现两个逻辑
+     *      1.判断checkpoint 是否是重启状态恢复，并实现状态恢复逻辑
+     *      2.初始化checkpoint存储逻辑规则。
+     * @param context
+     * @throws Exception
+     */
+    @Override
+    public void initializeState(FunctionInitializationContext context) throws Exception {
+        ListStateDescriptor<Boolean> descriptor = new ListStateDescriptor<>("redisSourceState", Types.BOOLEAN);
+        checkPointState = context.getOperatorStateStore().getListState(descriptor);
+        // 如果是从故障中恢复，就将 ListState 中的所有元素添加到局部变量中
+        if (context.isRestored()) {
+            for (Boolean element : checkPointState.get()) {
+                state = element;
+                break;
+            }
+        }
+    }
+
+
 
     public static List<String> getRedisClusterKeys(String[] redisHosts) {
         List<String> listAll = new ArrayList<String>();
@@ -192,5 +223,4 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
         rtsc = new RedisTimeSeriesClient(redissonCfg);
         return rtsc;
     }
-
 }
