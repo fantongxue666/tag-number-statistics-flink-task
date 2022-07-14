@@ -2,7 +2,7 @@ package com.ftx.flink.model;
 
 import java.util.Date;
 
-public class TagMessage {
+public class DataLakeTagMessage {
     public Date dt;
     public Date ts;
     public String tagNo;
@@ -14,7 +14,7 @@ public class TagMessage {
     public Long formattedTime;
     public String dataType;
 
-    public TagMessage(Date dt, Date ts, String tagNo, String phdTag, String deviceId, Long dateTime, Double tagValue, Integer confidence, Long formattedTime, String dataType) {
+    public DataLakeTagMessage(Date dt, Date ts, String tagNo, String phdTag, String deviceId, Long dateTime, Double tagValue, Integer confidence, Long formattedTime, String dataType) {
         this.dt = dt;
         this.ts = ts;
         this.tagNo = tagNo;
@@ -27,7 +27,7 @@ public class TagMessage {
         this.dataType = dataType;
     }
 
-    public TagMessage() {
+    public DataLakeTagMessage() {
     }
 
     public Date getDt() {

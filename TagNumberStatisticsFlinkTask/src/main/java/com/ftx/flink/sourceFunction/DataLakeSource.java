@@ -1,6 +1,6 @@
 package com.ftx.flink.sourceFunction;
 
-import com.ftx.flink.model.TagMessage;
+import com.ftx.flink.model.DataLakeTagMessage;
 import com.ftx.flink.utils.ConfigUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.common.state.ValueState;
@@ -19,7 +19,7 @@ import java.util.Date;
 /**
  * 数据湖的源数据
  */
-public class DataLakeSource extends RichSourceFunction<List<TagMessage>> {
+public class DataLakeSource extends RichSourceFunction<List<DataLakeTagMessage>> {
 
     final Logger logger = LoggerFactory.getLogger(DataLakeSource.class);
 
@@ -37,7 +37,7 @@ public class DataLakeSource extends RichSourceFunction<List<TagMessage>> {
     public DataLakeSource(String appPropertiesPath) {
         this.appPropertiesPath = appPropertiesPath;
         //初始化状态为false，表示未执行
-        ValueStateDescriptor<Boolean> descriptor = new ValueStateDescriptor<>("my state", Types.BOOLEAN);
+        ValueStateDescriptor<Boolean> descriptor = new ValueStateDescriptor<>("DataLakeSourceState", Types.BOOLEAN);
         state = getRuntimeContext().getState(descriptor);
         try {
             state.update(false);
@@ -47,16 +47,16 @@ public class DataLakeSource extends RichSourceFunction<List<TagMessage>> {
     }
 
     @Override
-    public void run(SourceContext<List<TagMessage>> ctx) throws Exception {
+    public void run(SourceContext<List<DataLakeTagMessage>> ctx) throws Exception {
         //初始化连接
         this.connection = initConnect();
         if(connection == null){
-            logger.error("Connection to data source failed");
+            logger.error("Connection to data source of DataLake failed");
         }
         Statement statement = connection.createStatement();
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
         if(!state.value()){
-            logger.info("程序第一次执行，处理数据源所有数据");
+            logger.info("程序第一次执行，处理数据湖的所有数据");
             //数据源为湖里的所有数据，每次推送一天的数据
             Map<String, String> propFromFile = ConfigUtil.readConfig_properties(appPropertiesPath);
             String startDateStr = propFromFile.get("startDate");
@@ -74,7 +74,7 @@ public class DataLakeSource extends RichSourceFunction<List<TagMessage>> {
                     //查某个位号列表在那一天的所有历史数据
                     String sql = "select * from iceberg.yulin.phd where tag_no = '"+ tag_no + "' and dt = '" + startDateStr + "';";
                     ResultSet executeQuerySet = statement.executeQuery(sql);
-                    List<TagMessage> tagMessageList = new ArrayList<>();
+                    List<DataLakeTagMessage> dataLakeTagMessageList = new ArrayList<>();
                     while (executeQuerySet.next()){
                         String dt = executeQuerySet.getString("dt");
                         Timestamp ts = executeQuerySet.getTimestamp("ts");
@@ -86,20 +86,20 @@ public class DataLakeSource extends RichSourceFunction<List<TagMessage>> {
                         Integer confidence = executeQuerySet.getInt("confidence");
                         Long formatted_time = executeQuerySet.getLong("formatted_time");
                         String data_type = executeQuerySet.getString("data_type");
-                        TagMessage tagMessage = new TagMessage();
-                        tagMessage.setDt(sdf.parse(dt));
-                        tagMessage.setTs(new Date(ts.getTime()));
-                        tagMessage.setTagNo(tag_no1);
-                        tagMessage.setPhdTag(phd_tag);
-                        tagMessage.setDeviceId(device_id);
-                        tagMessage.setDateTime(date_time);
-                        tagMessage.setTagValue(tag_value);
-                        tagMessage.setConfidence(confidence);
-                        tagMessage.setFormattedTime(formatted_time);
-                        tagMessage.setDataType(data_type);
-                        tagMessageList.add(tagMessage);
+                        DataLakeTagMessage dataLakeTagMessage = new DataLakeTagMessage();
+                        dataLakeTagMessage.setDt(sdf.parse(dt));
+                        dataLakeTagMessage.setTs(new Date(ts.getTime()));
+                        dataLakeTagMessage.setTagNo(tag_no1);
+                        dataLakeTagMessage.setPhdTag(phd_tag);
+                        dataLakeTagMessage.setDeviceId(device_id);
+                        dataLakeTagMessage.setDateTime(date_time);
+                        dataLakeTagMessage.setTagValue(tag_value);
+                        dataLakeTagMessage.setConfidence(confidence);
+                        dataLakeTagMessage.setFormattedTime(formatted_time);
+                        dataLakeTagMessage.setDataType(data_type);
+                        dataLakeTagMessageList.add(dataLakeTagMessage);
                     }
-                    ctx.collect(tagMessageList);
+                    ctx.collect(dataLakeTagMessageList);
                 }
                 //startDate增加一天
                 Calendar calendar = Calendar.getInstance();
@@ -128,7 +128,7 @@ public class DataLakeSource extends RichSourceFunction<List<TagMessage>> {
                 //查某个位号列表在那一天的所有历史数据
                 String sql = "select * from iceberg.yulin.phd where tag_no = '"+ tag_no + "' and dt = '" + lastDateStr + "';";
                 ResultSet executeQuerySet = statement.executeQuery(sql);
-                List<TagMessage> tagMessageList = new ArrayList<>();
+                List<DataLakeTagMessage> dataLakeTagMessageList = new ArrayList<>();
                 while (executeQuerySet.next()){
                     String dt = executeQuerySet.getString("dt");
                     Timestamp ts = executeQuerySet.getTimestamp("ts");
@@ -140,20 +140,20 @@ public class DataLakeSource extends RichSourceFunction<List<TagMessage>> {
                     Integer confidence = executeQuerySet.getInt("confidence");
                     Long formatted_time = executeQuerySet.getLong("formatted_time");
                     String data_type = executeQuerySet.getString("data_type");
-                    TagMessage tagMessage = new TagMessage();
-                    tagMessage.setDt(sdf.parse(dt));
-                    tagMessage.setTs(new Date(ts.getTime()));
-                    tagMessage.setTagNo(tag_no1);
-                    tagMessage.setPhdTag(phd_tag);
-                    tagMessage.setDeviceId(device_id);
-                    tagMessage.setDateTime(date_time);
-                    tagMessage.setTagValue(tag_value);
-                    tagMessage.setConfidence(confidence);
-                    tagMessage.setFormattedTime(formatted_time);
-                    tagMessage.setDataType(data_type);
-                    tagMessageList.add(tagMessage);
+                    DataLakeTagMessage dataLakeTagMessage = new DataLakeTagMessage();
+                    dataLakeTagMessage.setDt(sdf.parse(dt));
+                    dataLakeTagMessage.setTs(new Date(ts.getTime()));
+                    dataLakeTagMessage.setTagNo(tag_no1);
+                    dataLakeTagMessage.setPhdTag(phd_tag);
+                    dataLakeTagMessage.setDeviceId(device_id);
+                    dataLakeTagMessage.setDateTime(date_time);
+                    dataLakeTagMessage.setTagValue(tag_value);
+                    dataLakeTagMessage.setConfidence(confidence);
+                    dataLakeTagMessage.setFormattedTime(formatted_time);
+                    dataLakeTagMessage.setDataType(data_type);
+                    dataLakeTagMessageList.add(dataLakeTagMessage);
                 }
-                ctx.collect(tagMessageList);
+                ctx.collect(dataLakeTagMessageList);
             }
         }
 
@@ -176,8 +176,8 @@ public class DataLakeSource extends RichSourceFunction<List<TagMessage>> {
         String dlCatalog = propFromFile.get("datalake.catalog");
         String dlSchema = propFromFile.get("datalake.schema");
         String dlTable = propFromFile.get("datalake.table");
-        String sDate = propFromFile.get("startDate");
-        String eDate = propFromFile.get("endDate");
+        String sDate = propFromFile.get("datalake.startDate");
+        String eDate = propFromFile.get("datalake.endDate");
         if (dlHost.isEmpty()) {
             System.out.println("datalake.host can't be null");
             return null;
