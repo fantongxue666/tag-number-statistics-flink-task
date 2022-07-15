@@ -76,15 +76,15 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
             //结束时间
             String endDateStr = configMap.get("redis.endDate");
             long endDateTimestamp = sdf.parse(endDateStr).getTime();
-
-            Calendar calendar = Calendar.getInstance();
-            calendar.setTime(sdf.parse(startDateStr));
-            calendar.add(Calendar.DATE,1);
-            Date nextDay = calendar.getTime();
-            String nextDayStr = sdf.format(nextDay);
-            long nextDayTimestamp = nextDay.getTime();
-            while(startDateTimestamp < endDateTimestamp){
-                for(String key : ckeys){
+            String nextDayStr = StringUtils.EMPTY;
+            for(String key : ckeys){
+                while(startDateTimestamp < endDateTimestamp){
+                    Calendar calendar = Calendar.getInstance();
+                    calendar.setTime(sdf.parse(startDateStr));
+                    calendar.add(Calendar.DATE,1);
+                    Date nextDay = calendar.getTime();
+                    nextDayStr = sdf.format(nextDay);
+                    long nextDayTimestamp = nextDay.getTime();
                     List<Sample.Value> valueList = rts.range(key, simpleDateFormat.parse(startDateStr + " 00:00:00").getTime(), simpleDateFormat.parse(nextDayStr + " 23:59:59").getTime());
                     List<RedisTimeseriesTagMessage> redisTimeseriesTagMessageList = new ArrayList<>();
                     for(Sample.Value value : valueList){
@@ -96,12 +96,12 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
                         redisTimeseriesTagMessage.setTimestamp(tempTempstamp);
                         redisTimeseriesTagMessageList.add(redisTimeseriesTagMessage);
                     }
-
                     ctx.collect(redisTimeseriesTagMessageList);
+                    startDateStr = nextDayStr;
+                    startDateTimestamp = nextDayTimestamp;
                 }
-                startDateStr = nextDayStr;
-                startDateTimestamp = nextDayTimestamp;
             }
+
             logger.info("所有数据处理完成");
             state = true;
         }else{
