@@ -16,29 +16,23 @@ import java.util.*;
 
 public class Main {
     public static void main(String[] args) throws Exception{
-//        if(args.length!=2){
-//            System.out.println("use command as：");
-//            System.out.println("flink run -d -t yarn-per-job -c com.xxx.xxx.Main xxxxxxxxxxx.jar application.properties tagsconfig.properties");
-//            return;
-//        }
-        //全局配置文件
-//        String appPropertiesPath = args[0];
-        String appPropertiesPath = "D:\\Code\\tag-number-statistics-flink-task\\TagNumberStatisticsFlinkTask\\src\\main\\resources\\application.properties";
-        //位号时间间隔配置文件
-//        String tagsPropertiesPath = args[1];
-        String tagsPropertiesPath = "D:\\Code\\tag-number-statistics-flink-task\\TagNumberStatisticsFlinkTask\\src\\main\\resources\\tagsconfig.properties";
-        //获取执行环境
+        if(args.length!=2){
+            System.out.println("use command as：");
+            System.out.println("flink run -d -t yarn-per-job -c com.xxx.xxx.Main xxxxxxxxxxx.jar application.properties tagsconfig.properties");
+            return;
+        }
+        String appPropertiesPath = args[0];
+        String tagsPropertiesPath = args[1];
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        //加载数据源
-//        DataStreamSource<List<DataLakeTagMessage>> stream = env.addSource(new DataLakeSource(appPropertiesPath));
-        //转换操作，进行统计
-//        SingleOutputStreamOperator<String> map = stream.map(new DataLakeMapFunction(tagsPropertiesPath));
-        //执行批处理的任务反馈打印出来
-//        map.print();
+        //数据湖数据源
+        DataStreamSource<List<DataLakeTagMessage>> stream = env.addSource(new DataLakeSource(appPropertiesPath));
+        SingleOutputStreamOperator<String> dataLakeMap = stream.map(new DataLakeMapFunction(tagsPropertiesPath));
+        dataLakeMap.print();
 
+        //Redis数据源
         DataStreamSource<List<RedisTimeseriesTagMessage>> listDataStreamSource = env.addSource(new RedisTimeseriesSource(appPropertiesPath));
-        SingleOutputStreamOperator<String> map = listDataStreamSource.map(new TimeSeriesMapFunction(tagsPropertiesPath));
-        map.print();
+        SingleOutputStreamOperator<String> redisMap = listDataStreamSource.map(new TimeSeriesMapFunction(tagsPropertiesPath));
+        redisMap.print();
         env.execute();
 
     }

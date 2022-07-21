@@ -41,7 +41,7 @@ TableName：DeletionDataStat
 ```properties
 # key：位号名称
 # value：时间间隔 S|s 秒 M|m 分 H|h 时 支持小数
-11TT-10121=60s\
+11TT-10121=60s
 11TT-10122=60s
 ...
 ```
