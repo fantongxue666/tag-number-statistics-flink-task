@@ -35,14 +35,11 @@ public class Main {
 //        SingleOutputStreamOperator<String> map = stream.map(new DataLakeMapFunction(tagsPropertiesPath));
         //执行批处理的任务反馈打印出来
 //        map.print();
+
         DataStreamSource<List<RedisTimeseriesTagMessage>> listDataStreamSource = env.addSource(new RedisTimeseriesSource(appPropertiesPath));
         SingleOutputStreamOperator<String> map = listDataStreamSource.map(new TimeSeriesMapFunction(tagsPropertiesPath));
-
-
         map.print();
-        //执行任务
         env.execute();
-
 
     }
 

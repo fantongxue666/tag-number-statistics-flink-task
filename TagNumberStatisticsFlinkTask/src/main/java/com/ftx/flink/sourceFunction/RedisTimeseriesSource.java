@@ -23,6 +23,7 @@ import redis.clients.jedis.Client;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.ScanParams;
 import redis.clients.jedis.ScanResult;
+
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -30,19 +31,20 @@ import java.util.*;
 /**
  * 时序redis的源数据
  */
-public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseriesTagMessage>> implements CheckpointedFunction {
+public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseriesTagMessage>> {
     final Logger logger = LoggerFactory.getLogger(DataLakeSource.class);
-
     //application.properties文件的绝对路径
     private String appPropertiesPath = StringUtils.EMPTY;
     //建立的redis连接
     private RedisTimeSeriesClient rtsc = null;
-    //状态，标记是否第一次执行
-    ListState<Boolean> checkPointState = null;
+    //是否是第一次进入
     boolean state = false;
+    // 声明一个布尔变量，作为控制数据生成的标识位
+    private Boolean running = true;
 
     /**
      * 初始化
+     *
      * @param appPropertiesPath
      */
     public RedisTimeseriesSource(String appPropertiesPath) {
@@ -64,72 +66,83 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
         String hostsStr = configMap.get("redis.hosts");
         String[] redisHosts = hostsStr.split(",");
         //得到所有的位号
-//        List<String> ckeys = getRedisClusterKeys(redisHosts);
+//            List<String> ckeys = getRedisClusterKeys(redisHosts);
         List<String> ckeys = new ArrayList<>();
         ckeys.add("11TT-10121");
-
-        if(!state){
-            logger.info("程序第一次执行，处理时序redis的所有数据");
-            //开始时间
-            String startDateStr = configMap.get("redis.startDate");
-            long startDateTimestamp = sdf.parse(startDateStr).getTime();
-            //结束时间
-            String endDateStr = configMap.get("redis.endDate");
-            long endDateTimestamp = sdf.parse(endDateStr).getTime();
-            String nextDayStr = StringUtils.EMPTY;
-            for(String key : ckeys){
-                while(startDateTimestamp < endDateTimestamp){
-                    Calendar calendar = Calendar.getInstance();
-                    calendar.setTime(sdf.parse(startDateStr));
-                    calendar.add(Calendar.DATE,1);
-                    Date nextDay = calendar.getTime();
-                    nextDayStr = sdf.format(nextDay);
-                    long nextDayTimestamp = nextDay.getTime();
-                    List<Sample.Value> valueList = rts.range(key, simpleDateFormat.parse(startDateStr + " 00:00:00").getTime(), simpleDateFormat.parse(nextDayStr + " 23:59:59").getTime());
-                    List<RedisTimeseriesTagMessage> redisTimeseriesTagMessageList = new ArrayList<>();
-                    for(Sample.Value value : valueList){
+        while (running) {
+            if (!state) {
+                logger.info("程序第一次执行，处理时序redis的所有数据");
+                handle(configMap, ckeys, rts, ctx);
+                Thread.sleep(3000);
+                logger.info("所有数据处理完成");
+                state = true;
+            } else {
+                logger.info("程序非第一次执行，只处理前一天的数据开始");
+                Calendar calendar = Calendar.getInstance();
+                calendar.setTime(new Date());
+                calendar.add(Calendar.DATE, -1);
+                Date date = calendar.getTime();
+                Long beginDateTimeStamp = simpleDateFormat.parse(sdf.format(date) + " 00:00:00").getTime();
+                Long endDateTimeStamp = simpleDateFormat.parse(sdf.format(date) + " 23:59:59").getTime();
+                for (String key : ckeys) {
+                    List<Sample.Value> valueList = rts.range(key, beginDateTimeStamp, endDateTimeStamp);
+                    if(valueList.size() > 0){
+                        double tempValue = 0;
+                        long tempTempstamp = 0;
+                        List<RedisTimeseriesTagMessage> redisTimeseriesTagMessageList = new ArrayList<>();
                         RedisTimeseriesTagMessage redisTimeseriesTagMessage = new RedisTimeseriesTagMessage();
-                        double tempValue = value.getValue();
-                        long tempTempstamp = value.getTimestamp();
-                        redisTimeseriesTagMessage.setKey(key);
-                        redisTimeseriesTagMessage.setValue(tempValue);
-                        redisTimeseriesTagMessage.setTimestamp(tempTempstamp);
-                        redisTimeseriesTagMessageList.add(redisTimeseriesTagMessage);
+                        for (Sample.Value value : valueList) {
+                            tempValue = value.getValue();
+                            tempTempstamp = value.getTimestamp();
+                            redisTimeseriesTagMessage.setKey(key);
+                            redisTimeseriesTagMessage.setValue(tempValue);
+                            redisTimeseriesTagMessage.setTimestamp(tempTempstamp);
+                            redisTimeseriesTagMessageList.add(redisTimeseriesTagMessage);
+                        }
+                        ctx.collect(redisTimeseriesTagMessageList);
                     }
-                    ctx.collect(redisTimeseriesTagMessageList);
-                    startDateStr = nextDayStr;
-                    startDateTimestamp = nextDayTimestamp;
                 }
+                logger.info("数据处理完成123");
+                Thread.sleep(3000);
+                state = true;
             }
+        }
+    }
 
-            logger.info("所有数据处理完成");
-            state = true;
-        }else{
-            logger.info("程序非第一次执行，只处理前一天的数据开始");
-            Calendar calendar = Calendar.getInstance();
-            calendar.setTime(new Date());
-            calendar.add(Calendar.DATE,-1);
-            Date date = calendar.getTime();
-            Long beginDateTimeStamp = simpleDateFormat.parse(sdf.format(date) + " 00:00:00").getTime();
-            Long endDateTimeStamp = simpleDateFormat.parse(sdf.format(date) + " 23:59:59").getTime();
-            for(String key : ckeys){
-                List<Sample.Value> valueList = rts.range(key, beginDateTimeStamp,endDateTimeStamp);
-                double tempValue = 0;
-                long tempTempstamp = 0;
+    private void handle(Map<String, String> configMap, List<String> ckeys, RedisTimeSeries rts, SourceContext<List<RedisTimeseriesTagMessage>> ctx) throws Exception {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        //开始时间
+        String startDateStr = configMap.get("redis.startDate");
+        long startDateTimestamp = sdf.parse(startDateStr).getTime();
+        //结束时间
+        String endDateStr = configMap.get("redis.endDate");
+        long endDateTimestamp = sdf.parse(endDateStr).getTime();
+        String nextDayStr = StringUtils.EMPTY;
+        for (String key : ckeys) {
+            while (startDateTimestamp < endDateTimestamp) {
+                Calendar calendar = Calendar.getInstance();
+                calendar.setTime(sdf.parse(startDateStr));
+                calendar.add(Calendar.DATE, 1);
+                Date nextDay = calendar.getTime();
+                nextDayStr = sdf.format(nextDay);
+                long nextDayTimestamp = nextDay.getTime();
+                List<Sample.Value> valueList = rts.range(key, simpleDateFormat.parse(startDateStr + " 00:00:00").getTime(), simpleDateFormat.parse(nextDayStr + " 23:59:59").getTime());
                 List<RedisTimeseriesTagMessage> redisTimeseriesTagMessageList = new ArrayList<>();
-                RedisTimeseriesTagMessage redisTimeseriesTagMessage = new RedisTimeseriesTagMessage();
-                for(Sample.Value value : valueList){
-                    tempValue = value.getValue();
-                    tempTempstamp = value.getTimestamp();
+                for (Sample.Value value : valueList) {
+                    RedisTimeseriesTagMessage redisTimeseriesTagMessage = new RedisTimeseriesTagMessage();
+                    double tempValue = value.getValue();
+                    long tempTempstamp = value.getTimestamp();
                     redisTimeseriesTagMessage.setKey(key);
                     redisTimeseriesTagMessage.setValue(tempValue);
                     redisTimeseriesTagMessage.setTimestamp(tempTempstamp);
                     redisTimeseriesTagMessageList.add(redisTimeseriesTagMessage);
                 }
+                if (redisTimeseriesTagMessageList == null || redisTimeseriesTagMessageList.isEmpty()) return;
                 ctx.collect(redisTimeseriesTagMessageList);
+                startDateStr = nextDayStr;
+                startDateTimestamp = nextDayTimestamp;
             }
-            logger.info("数据处理完成");
-            state = true;
         }
     }
 
@@ -138,35 +151,8 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
     public void cancel() {
         //关闭连接
         rtsc.shutdown();
+        running = false;
     }
-
-    //当每次任务触发checkpoint时执行，更新保存状态数据
-    @Override
-    public void snapshotState(FunctionSnapshotContext context) throws Exception {
-        checkPointState.clear();
-        checkPointState.add(state);
-    }
-
-    /**
-     * 初始化checkpoint 存储结构，一般在这里我们会实现两个逻辑
-     *      1.判断checkpoint 是否是重启状态恢复，并实现状态恢复逻辑
-     *      2.初始化checkpoint存储逻辑规则。
-     * @param context
-     * @throws Exception
-     */
-    @Override
-    public void initializeState(FunctionInitializationContext context) throws Exception {
-        ListStateDescriptor<Boolean> descriptor = new ListStateDescriptor<>("redisSourceState", Types.BOOLEAN);
-        checkPointState = context.getOperatorStateStore().getListState(descriptor);
-        // 如果是从故障中恢复，就将 ListState 中的所有元素添加到局部变量中
-        if (context.isRestored()) {
-            for (Boolean element : checkPointState.get()) {
-                state = element;
-                break;
-            }
-        }
-    }
-
 
 
     public static List<String> getRedisClusterKeys(String[] redisHosts) {

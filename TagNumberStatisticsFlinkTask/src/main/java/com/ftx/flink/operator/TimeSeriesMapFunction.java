@@ -1,5 +1,4 @@
 package com.ftx.flink.operator;
-
 import com.ftx.flink.Main;
 import com.ftx.flink.model.RedisTimeseriesTagMessage;
 import com.ftx.flink.utils.ConfigUtil;
@@ -40,7 +39,7 @@ public class TimeSeriesMapFunction  implements MapFunction<List<RedisTimeseriesT
         //时间间隔
         long timestamp = solveRule(rule);
         if(timestamp == 0){
-            logger.error("位号{}时间间隔配置错误",tagNo);
+            logger.error("请检查位号{}时间间隔配置，看是否已配置或配置错误",tagNo);
             return null;
         }
 
@@ -67,6 +66,9 @@ public class TimeSeriesMapFunction  implements MapFunction<List<RedisTimeseriesT
      * @return
      */
     private static long solveRule(String rule) {
+        if(StringUtils.isBlank(rule)){
+            return 0;
+        }
         String tag = rule.substring(rule.length() - 1);
         String numStr = rule.substring(0, rule.length() - 1);
         long result = 0;
