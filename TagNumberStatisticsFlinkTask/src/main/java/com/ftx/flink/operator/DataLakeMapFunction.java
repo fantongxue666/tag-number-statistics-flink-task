@@ -3,11 +3,14 @@ package com.ftx.flink.operator;
 import com.ftx.flink.Main;
 import com.ftx.flink.model.DataLakeTagMessage;
 import com.ftx.flink.utils.ConfigUtil;
+import com.ftx.flink.utils.ConnectionUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.Connection;
+import java.sql.Statement;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -18,8 +21,10 @@ import java.util.stream.Collectors;
 public class DataLakeMapFunction implements MapFunction<List<DataLakeTagMessage>, String> {
     final static Logger logger = LoggerFactory.getLogger(Main.class);
     String tagsPropertiesPath = StringUtils.EMPTY;
+    String appPropertiesPath = StringUtils.EMPTY;
 
-    public DataLakeMapFunction(String tagsPropertiesPath) {
+    public DataLakeMapFunction(String appPropertiesPath,String tagsPropertiesPath) {
+        this.appPropertiesPath = appPropertiesPath;
         this.tagsPropertiesPath = tagsPropertiesPath;
     }
 
@@ -52,12 +57,28 @@ public class DataLakeMapFunction implements MapFunction<List<DataLakeTagMessage>
         });
         Long minTimeStamp = collect.get(0);
         Long maxTimeStamp = collect.get(collect.size() - 1);
+
+        //统计
+        //缺失数
+        int count = 0;
+        StringBuilder timestampsString = new StringBuilder();
         while (minTimeStamp < maxTimeStamp) {
             if (!collect.contains(minTimeStamp)) {
                 //缺少数据，暂时打印进行验证
                 logger.info("缺少数据！位号：{} 缺少日期：{} 缺失时刻：{}", tagNo, dtStr, minTimeStamp);
+                count++;
+                timestampsString.append(String.valueOf(minTimeStamp)).append(",");
             }
             minTimeStamp += timestamp;
+        }
+        if(!StringUtils.isBlank(timestampsString)){
+            String timestampsStringResult = timestampsString.toString().substring(0,timestampsString.length()-1);
+            //存储
+            String insertSql = "insert into DeletionDataStat values ('"+UUID.randomUUID().toString()+"','"+tagNo+"','"+dtStr+"',"+count+",'"+timestampsStringResult+"')";
+            Connection connection = ConnectionUtil.getIcebergConnection(appPropertiesPath);
+            Statement statement = connection.createStatement();
+            boolean b = statement.execute(insertSql);
+            if(!b)logger.error("ERROR! 位号"+tagNo + "检测结果插入iceberg失败");
         }
 
         String result = "位号为" + tagNo + "，日期为" + dtStr + "已检测完成";

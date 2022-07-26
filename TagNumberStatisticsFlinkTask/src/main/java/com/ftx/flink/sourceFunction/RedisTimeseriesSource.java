@@ -1,20 +1,10 @@
 package com.ftx.flink.sourceFunction;
-
 import com.ftx.flink.model.RedisTimeseriesTagMessage;
 import com.ftx.flink.utils.ConfigUtil;
 import io.github.dengliming.redismodule.redistimeseries.RedisTimeSeries;
 import io.github.dengliming.redismodule.redistimeseries.Sample;
 import io.github.dengliming.redismodule.redistimeseries.client.RedisTimeSeriesClient;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.flink.api.common.state.ListState;
-import org.apache.flink.api.common.state.ListStateDescriptor;
-import org.apache.flink.api.common.state.ValueState;
-import org.apache.flink.api.common.state.ValueStateDescriptor;
-import org.apache.flink.api.common.typeinfo.Types;
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.runtime.state.FunctionInitializationContext;
-import org.apache.flink.runtime.state.FunctionSnapshotContext;
-import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.functions.source.RichSourceFunction;
 import org.redisson.config.ClusterServersConfig;
 import org.slf4j.Logger;
@@ -23,8 +13,6 @@ import redis.clients.jedis.Client;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.ScanParams;
 import redis.clients.jedis.ScanResult;
-
-import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -62,19 +50,27 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
         }
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
         SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        SimpleDateFormat sdf_hms = new SimpleDateFormat("HH:mm");
         Map<String, String> configMap = ConfigUtil.readConfig_properties(appPropertiesPath);
         String hostsStr = configMap.get("redis.hosts");
         String[] redisHosts = hostsStr.split(",");
         //得到所有的位号
-//            List<String> ckeys = getRedisClusterKeys(redisHosts);
-        List<String> ckeys = new ArrayList<>();
-        ckeys.add("11TT-10121");
+            List<String> ckeys = getRedisClusterKeys(redisHosts);
+//        List<String> ckeys = new ArrayList<>();
+//        ckeys.add("11TT-10121");
         while (running) {
+            while (true){
+                //获取当前时间是否是00：30
+                String format = sdf_hms.format(new Date());
+                if(StringUtils.equals(format,ConfigUtil.readConfig_properties(appPropertiesPath).get("executeTime"))){
+                    break;
+                }else{
+                    Thread.sleep(1000 * 60);
+                }
+            }
             if (!state) {
                 logger.info("程序第一次执行，处理时序redis的所有数据");
                 handle(configMap, ckeys, rts, ctx);
-                Thread.sleep(3000);
-                logger.info("所有数据处理完成");
                 state = true;
             } else {
                 logger.info("程序非第一次执行，只处理前一天的数据开始");
@@ -102,10 +98,9 @@ public class RedisTimeseriesSource extends RichSourceFunction<List<RedisTimeseri
                         ctx.collect(redisTimeseriesTagMessageList);
                     }
                 }
-                logger.info("数据处理完成123");
-                Thread.sleep(3000);
                 state = true;
             }
+            Thread.sleep(1000 * 60 * 5);
         }
     }
 

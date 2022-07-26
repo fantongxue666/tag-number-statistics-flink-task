@@ -1,16 +1,11 @@
 package com.ftx.flink.sourceFunction;
-
 import com.ftx.flink.model.DataLakeTagMessage;
 import com.ftx.flink.utils.ConfigUtil;
+import com.ftx.flink.utils.ConnectionUtil;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.flink.api.common.state.ValueState;
-import org.apache.flink.api.common.state.ValueStateDescriptor;
-import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.functions.source.RichSourceFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
 import java.sql.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -43,13 +38,23 @@ public class DataLakeSource extends RichSourceFunction<List<DataLakeTagMessage>>
     @Override
     public void run(SourceContext<List<DataLakeTagMessage>> ctx) throws Exception {
         //初始化连接
-        this.connection = initConnect();
+        this.connection = ConnectionUtil.getIcebergConnection(appPropertiesPath);
         if(connection == null){
             logger.error("Connection to data source of DataLake failed");
         }
         Statement statement = connection.createStatement();
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+        SimpleDateFormat sdf_hms = new SimpleDateFormat("HH:mm");
         while (running) {
+            while (true){
+                //获取当前时间是否是00：30
+                String format = sdf_hms.format(new Date());
+                if(StringUtils.equals(format,ConfigUtil.readConfig_properties(appPropertiesPath).get("executeTime"))){
+                    break;
+                }else{
+                    Thread.sleep(1000 * 60);
+                }
+            }
             if (!state) {
                 logger.info("程序第一次执行，处理数据湖的所有数据");
                 //数据源为湖里的所有数据，每次推送一天的数据
@@ -107,7 +112,6 @@ public class DataLakeSource extends RichSourceFunction<List<DataLakeTagMessage>>
                 //执行完成后状态置为True
                 state = true;
                 logger.info("数据处理完成");
-                Thread.sleep(3000);
             }else{
                 //数据源为前一天的历史数据，直接发送全部的，交给flink程序处理
                 Calendar calendar = Calendar.getInstance();
@@ -152,8 +156,8 @@ public class DataLakeSource extends RichSourceFunction<List<DataLakeTagMessage>>
                         ctx.collect(dataLakeTagMessageList);
                     }
                 }
-                Thread.sleep(3000);
             }
+            Thread.sleep(1000 * 60 * 5);
         }
     }
 
@@ -165,52 +169,6 @@ public class DataLakeSource extends RichSourceFunction<List<DataLakeTagMessage>>
         } catch (SQLException throwables) {
             throwables.printStackTrace();
         }
-
     }
 
-    private Connection initConnect(){
-        Map<String, String> propFromFile = ConfigUtil.readConfig_properties(appPropertiesPath);
-        String dlHost = propFromFile.get("datalake.host");
-        String dlCatalog = propFromFile.get("datalake.catalog");
-        String dlSchema = propFromFile.get("datalake.schema");
-        String dlTable = propFromFile.get("datalake.table");
-        String sDate = propFromFile.get("datalake.startDate");
-        String eDate = propFromFile.get("datalake.endDate");
-        if (dlHost.isEmpty()) {
-            System.out.println("datalake.host can't be null");
-            return null;
-        }
-        if (dlCatalog.isEmpty()) {
-            System.out.println("datalake.catalog can't be null");
-            return null;
-        }
-        if (dlSchema.isEmpty()) {
-            System.out.println("datalake.schema can't be null");
-            return null;
-        }
-        if (dlTable.isEmpty()) {
-            System.out.println("datalake.table can't be null");
-            return null;
-        }
-        if (sDate.isEmpty()) {
-            System.out.println("startDate can't be null");
-            return null;
-        }
-        if (eDate.isEmpty()) {
-            System.out.println("endDate can't be null");
-            return null;
-        }
-
-        // properties
-        String url = "jdbc:trino://" + dlHost + "/" + dlCatalog + "/" + dlSchema;
-        Properties propJDBC = new Properties();
-        propJDBC.setProperty("user", "admin");
-        Connection connection = null;
-        try {
-            connection = DriverManager.getConnection(url, propJDBC);
-        } catch (SQLException throwables) {
-            throwables.printStackTrace();
-        }
-        return connection;
-    }
 }
