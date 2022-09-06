@@ -78,7 +78,9 @@ public class DataLakeMapFunction implements MapFunction<List<DataLakeTagMessage>
             Connection connection = ConnectionUtil.getIcebergConnection(appPropertiesPath);
             Statement statement = connection.createStatement();
             boolean b = statement.execute(insertSql);
-            if(!b)logger.error("ERROR! 位号"+tagNo + "检测结果插入iceberg失败");
+            if(!b) {
+                logger.error("ERROR! 位号"+tagNo + "检测结果插入iceberg失败");
+            }
         }
 
         String result = "位号为" + tagNo + "，日期为" + dtStr + "已检测完成";
